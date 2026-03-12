@@ -5,9 +5,8 @@ type MatrixClientResolverMocks = {
   loadConfigMock: Mock<() => unknown>;
   getMatrixRuntimeMock: Mock<() => unknown>;
   getActiveMatrixClientMock: Mock<(...args: unknown[]) => MatrixClient | null>;
-  createMatrixClientMock: Mock<(...args: unknown[]) => Promise<MatrixClient>>;
+  resolveSharedMatrixClientMock: Mock<(...args: unknown[]) => Promise<MatrixClient>>;
   isBunRuntimeMock: Mock<() => boolean>;
-  resolveMatrixAuthMock: Mock<(...args: unknown[]) => Promise<unknown>>;
   resolveMatrixAuthContextMock: Mock<
     (params: { cfg: unknown; accountId?: string | null }) => unknown
   >;
@@ -17,9 +16,8 @@ export const matrixClientResolverMocks: MatrixClientResolverMocks = {
   loadConfigMock: vi.fn(() => ({})),
   getMatrixRuntimeMock: vi.fn(),
   getActiveMatrixClientMock: vi.fn(),
-  createMatrixClientMock: vi.fn(),
+  resolveSharedMatrixClientMock: vi.fn(),
   isBunRuntimeMock: vi.fn(() => false),
-  resolveMatrixAuthMock: vi.fn(),
   resolveMatrixAuthContextMock: vi.fn(),
 };
 
@@ -43,24 +41,14 @@ export function primeMatrixClientResolverMocks(params?: {
     loadConfigMock,
     getMatrixRuntimeMock,
     getActiveMatrixClientMock,
-    createMatrixClientMock,
+    resolveSharedMatrixClientMock,
     isBunRuntimeMock,
-    resolveMatrixAuthMock,
     resolveMatrixAuthContextMock,
   } = matrixClientResolverMocks;
 
   const cfg = params?.cfg ?? {};
   const accountId = params?.accountId ?? "default";
   const defaultResolved = {
-    homeserver: "https://matrix.example.org",
-    userId: "@bot:example.org",
-    accessToken: "token",
-    password: undefined,
-    deviceId: "DEVICE123",
-    encryption: false,
-  };
-  const defaultAuth = {
-    accountId,
     homeserver: "https://matrix.example.org",
     userId: "@bot:example.org",
     accessToken: "token",
@@ -96,11 +84,7 @@ export function primeMatrixClientResolverMocks(params?: {
       },
     }),
   );
-  resolveMatrixAuthMock.mockResolvedValue({
-    ...defaultAuth,
-    ...params?.auth,
-  });
-  createMatrixClientMock.mockResolvedValue(client);
+  resolveSharedMatrixClientMock.mockResolvedValue(client);
 
   return client;
 }

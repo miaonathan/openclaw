@@ -54,6 +54,10 @@ const makeClient = () => {
     getEvent,
     uploadContent,
     getUserId: vi.fn().mockResolvedValue("@bot:example.org"),
+    prepareForOneOff: vi.fn(async () => undefined),
+    start: vi.fn(async () => undefined),
+    stop: vi.fn(() => undefined),
+    stopAndPersist: vi.fn(async () => undefined),
   } as unknown as import("./sdk.js").MatrixClient;
   return { client, sendMessage, sendEvent, getEvent, uploadContent };
 };
@@ -464,6 +468,10 @@ describe("sendTypingMatrix", () => {
     const setTyping = vi.fn().mockResolvedValue(undefined);
     const client = {
       setTyping,
+      prepareForOneOff: vi.fn(async () => undefined),
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(() => undefined),
+      stopAndPersist: vi.fn(async () => undefined),
     } as unknown as import("./sdk.js").MatrixClient;
 
     await sendTypingMatrix("room:!room:example", true, undefined, client);

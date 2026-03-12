@@ -1,12 +1,7 @@
 import { getMatrixRuntime } from "../runtime.js";
 import type { CoreConfig } from "../types.js";
 import { getActiveMatrixClient } from "./active-client.js";
-import {
-  createMatrixClient,
-  isBunRuntime,
-  resolveMatrixAuth,
-  resolveMatrixAuthContext,
-} from "./client.js";
+import { isBunRuntime, resolveMatrixAuthContext, resolveSharedMatrixClient } from "./client.js";
 import type { MatrixClient } from "./sdk.js";
 
 type ResolvedRuntimeMatrixClient = {
@@ -19,19 +14,19 @@ type ResolvedRuntimeMatrixClientStopMode = "stop" | "persist";
 
 type MatrixResolvedClientHook = (
   client: MatrixClient,
-  context: { createdForOneOff: boolean },
+  context: { preparedByDefault: boolean },
 ) => Promise<void> | void;
 
 async function ensureResolvedClientReadiness(params: {
   client: MatrixClient;
   readiness?: MatrixRuntimeClientReadiness;
-  createdForOneOff: boolean;
+  preparedByDefault: boolean;
 }): Promise<void> {
   if (params.readiness === "started") {
     await params.client.start();
     return;
   }
-  if (params.readiness === "prepared" || (!params.readiness && params.createdForOneOff)) {
+  if (params.readiness === "prepared" || (!params.readiness && params.preparedByDefault)) {
     await params.client.prepareForOneOff();
   }
 }
@@ -51,7 +46,7 @@ async function resolveRuntimeMatrixClient(opts: {
 }): Promise<ResolvedRuntimeMatrixClient> {
   ensureMatrixNodeRuntime();
   if (opts.client) {
-    await opts.onResolved?.(opts.client, { createdForOneOff: false });
+    await opts.onResolved?.(opts.client, { preparedByDefault: false });
     return { client: opts.client, stopOnDone: false };
   }
 
@@ -62,27 +57,17 @@ async function resolveRuntimeMatrixClient(opts: {
   });
   const active = getActiveMatrixClient(authContext.accountId);
   if (active) {
-    await opts.onResolved?.(active, { createdForOneOff: false });
+    await opts.onResolved?.(active, { preparedByDefault: false });
     return { client: active, stopOnDone: false };
   }
 
-  const auth = await resolveMatrixAuth({
+  const client = await resolveSharedMatrixClient({
     cfg,
+    timeoutMs: opts.timeoutMs,
     accountId: authContext.accountId,
   });
-  const client = await createMatrixClient({
-    homeserver: auth.homeserver,
-    userId: auth.userId,
-    accessToken: auth.accessToken,
-    password: auth.password,
-    deviceId: auth.deviceId,
-    encryption: auth.encryption,
-    localTimeoutMs: opts.timeoutMs,
-    accountId: auth.accountId,
-    autoBootstrapCrypto: false,
-  });
-  await opts.onResolved?.(client, { createdForOneOff: true });
-  return { client, stopOnDone: true };
+  await opts.onResolved?.(client, { preparedByDefault: true });
+  return { client, stopOnDone: false };
 }
 
 export async function resolveRuntimeMatrixClientWithReadiness(opts: {
@@ -101,7 +86,7 @@ export async function resolveRuntimeMatrixClientWithReadiness(opts: {
       await ensureResolvedClientReadiness({
         client,
         readiness: opts.readiness,
-        createdForOneOff: context.createdForOneOff,
+        preparedByDefault: context.preparedByDefault,
       });
     },
   });

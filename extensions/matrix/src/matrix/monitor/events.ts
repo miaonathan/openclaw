@@ -7,6 +7,14 @@ import type { MatrixRawEvent } from "./types.js";
 import { EventType } from "./types.js";
 import { createMatrixVerificationEventRouter } from "./verification-events.js";
 
+function formatMatrixSelfDecryptionHint(accountId: string): string {
+  return (
+    "matrix: failed to decrypt a message from this same Matrix user. " +
+    "This usually means another Matrix device did not share the room key, or another OpenClaw runtime is using the same account. " +
+    `Check 'openclaw matrix verify status --verbose --account ${accountId}' and 'openclaw matrix devices list --account ${accountId}'.`
+  );
+}
+
 export function registerMatrixMonitorEvents(params: {
   cfg: CoreConfig;
   client: MatrixClient;
@@ -60,11 +68,24 @@ export function registerMatrixMonitorEvents(params: {
   client.on(
     "room.failed_decryption",
     async (roomId: string, event: MatrixRawEvent, error: Error) => {
+      const selfUserId =
+        typeof client.getUserId === "function" ? ((await client.getUserId()) ?? null) : null;
+      const sender = typeof event.sender === "string" ? event.sender : null;
+      const senderMatchesOwnUser = Boolean(selfUserId && sender && selfUserId === sender);
       logger.warn("Failed to decrypt message", {
         roomId,
         eventId: event.event_id,
+        sender,
+        senderMatchesOwnUser,
         error: error.message,
       });
+      if (senderMatchesOwnUser) {
+        logger.warn(formatMatrixSelfDecryptionHint(auth.accountId), {
+          roomId,
+          eventId: event.event_id,
+          sender,
+        });
+      }
       logVerboseMessage(
         `matrix: failed decrypt room=${roomId} id=${event.event_id ?? "unknown"} error=${error.message}`,
       );

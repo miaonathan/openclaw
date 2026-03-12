@@ -7,6 +7,7 @@ import type { MatrixRawEvent } from "./types.js";
 import { EventType } from "./types.js";
 
 type RoomEventListener = (roomId: string, event: MatrixRawEvent) => void;
+type FailedDecryptListener = (roomId: string, event: MatrixRawEvent, error: Error) => Promise<void>;
 
 function getSentNoticeBody(sendMessage: ReturnType<typeof vi.fn>, index = 0): string {
   const calls = sendMessage.mock.calls as unknown[][];
@@ -92,6 +93,9 @@ function createHarness(params?: {
     logger,
     formatNativeDependencyHint,
     roomMessageListener: listeners.get("room.message") as RoomEventListener | undefined,
+    failedDecryptListener: listeners.get("room.failed_decryption") as
+      | FailedDecryptListener
+      | undefined,
   };
 }
 
@@ -397,6 +401,81 @@ describe("registerMatrixMonitorEvents verification routing", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       "matrix: encryption enabled but crypto is unavailable; install hint",
       { roomId: "!room:example.org" },
+    );
+  });
+
+  it("adds self-device guidance when decrypt failures come from the same Matrix user", async () => {
+    const { logger, failedDecryptListener } = createHarness({
+      accountId: "ops",
+      selfUserId: "@gumadeiras:matrix.example.org",
+    });
+    if (!failedDecryptListener) {
+      throw new Error("room.failed_decryption listener was not registered");
+    }
+
+    await failedDecryptListener(
+      "!room:example.org",
+      {
+        event_id: "$enc-self",
+        sender: "@gumadeiras:matrix.example.org",
+        type: EventType.RoomMessageEncrypted,
+        origin_server_ts: Date.now(),
+        content: {},
+      },
+      new Error("The sender's device has not sent us the keys for this message."),
+    );
+
+    expect(logger.warn).toHaveBeenNthCalledWith(
+      1,
+      "Failed to decrypt message",
+      expect.objectContaining({
+        roomId: "!room:example.org",
+        eventId: "$enc-self",
+        sender: "@gumadeiras:matrix.example.org",
+        senderMatchesOwnUser: true,
+      }),
+    );
+    expect(logger.warn).toHaveBeenNthCalledWith(
+      2,
+      "matrix: failed to decrypt a message from this same Matrix user. This usually means another Matrix device did not share the room key, or another OpenClaw runtime is using the same account. Check 'openclaw matrix verify status --verbose --account ops' and 'openclaw matrix devices list --account ops'.",
+      {
+        roomId: "!room:example.org",
+        eventId: "$enc-self",
+        sender: "@gumadeiras:matrix.example.org",
+      },
+    );
+  });
+
+  it("does not add self-device guidance for decrypt failures from another sender", async () => {
+    const { logger, failedDecryptListener } = createHarness({
+      accountId: "ops",
+      selfUserId: "@gumadeiras:matrix.example.org",
+    });
+    if (!failedDecryptListener) {
+      throw new Error("room.failed_decryption listener was not registered");
+    }
+
+    await failedDecryptListener(
+      "!room:example.org",
+      {
+        event_id: "$enc-other",
+        sender: "@alice:matrix.example.org",
+        type: EventType.RoomMessageEncrypted,
+        origin_server_ts: Date.now(),
+        content: {},
+      },
+      new Error("The sender's device has not sent us the keys for this message."),
+    );
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Failed to decrypt message",
+      expect.objectContaining({
+        roomId: "!room:example.org",
+        eventId: "$enc-other",
+        sender: "@alice:matrix.example.org",
+        senderMatchesOwnUser: false,
+      }),
     );
   });
 });
