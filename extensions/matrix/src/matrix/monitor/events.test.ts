@@ -65,6 +65,7 @@ function createHarness(params?: {
       async (roomId: string) =>
         params?.joinedMembersByRoom?.[roomId] ?? ["@bot:example.org", "@alice:example.org"],
     ),
+    getJoinedRooms: vi.fn(async () => Object.keys(params?.joinedMembersByRoom ?? {})),
     ...(params?.cryptoAvailable === false
       ? {}
       : {
@@ -344,6 +345,50 @@ describe("registerMatrixMonitorEvents verification routing", () => {
       );
       expect(bodies.some((body) => body.includes("SAS decimal: 1111 2222 3333"))).toBe(true);
     });
+  });
+
+  it("posts SAS notices from summary updates using the active strict DM when room mapping is missing", async () => {
+    const { sendMessage, verificationSummaryListener } = createHarness({
+      joinedMembersByRoom: {
+        "!dm-active:example.org": ["@alice:example.org", "@bot:example.org"],
+      },
+    });
+    if (!verificationSummaryListener) {
+      throw new Error("verification.summary listener was not registered");
+    }
+
+    verificationSummaryListener({
+      id: "verification-unmapped",
+      otherUserId: "@alice:example.org",
+      isSelfVerification: false,
+      initiatedByMe: false,
+      phase: 3,
+      phaseName: "started",
+      pending: true,
+      methods: ["m.sas.v1"],
+      canAccept: false,
+      hasSas: true,
+      sas: {
+        decimal: [4321, 8765, 2109],
+        emoji: [
+          ["🚀", "Rocket"],
+          ["🦋", "Butterfly"],
+          ["📕", "Book"],
+        ],
+      },
+      hasReciprocateQr: false,
+      completed: false,
+      createdAt: new Date("2026-02-25T21:42:54.000Z").toISOString(),
+      updatedAt: new Date("2026-02-25T21:42:55.000Z").toISOString(),
+    });
+
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    });
+    const roomId = (sendMessage.mock.calls[0]?.[0] ?? "") as string;
+    const body = getSentNoticeBody(sendMessage, 0);
+    expect(roomId).toBe("!dm-active:example.org");
+    expect(body).toContain("SAS decimal: 4321 8765 2109");
   });
 
   it("retries SAS notice lookup when start arrives before SAS payload is available", async () => {

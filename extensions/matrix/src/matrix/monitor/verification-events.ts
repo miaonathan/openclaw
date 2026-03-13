@@ -1,3 +1,4 @@
+import { inspectMatrixDirectRooms } from "../direct-management.js";
 import { isStrictDirectRoom } from "../direct-room.js";
 import type { MatrixClient } from "../sdk.js";
 import type { MatrixRawEvent } from "./types.js";
@@ -322,18 +323,32 @@ export function createMatrixVerificationEventRouter(params: {
     }
   }
 
-  function resolveSummaryRoomId(summary: MatrixVerificationSummaryLike): string | null {
-    return (
+  async function resolveSummaryRoomId(
+    summary: MatrixVerificationSummaryLike,
+  ): Promise<string | null> {
+    const mappedRoomId =
       trimMaybeString(summary.roomId) ??
       trimMaybeString(
         summary.transactionId ? verificationFlowRooms.get(summary.transactionId) : null,
       ) ??
-      trimMaybeString(verificationFlowRooms.get(summary.id))
-    );
+      trimMaybeString(verificationFlowRooms.get(summary.id));
+    if (mappedRoomId) {
+      return mappedRoomId;
+    }
+
+    const remoteUserId = trimMaybeString(summary.otherUserId);
+    if (!remoteUserId) {
+      return null;
+    }
+    const inspection = await inspectMatrixDirectRooms({
+      client: params.client,
+      remoteUserId,
+    }).catch(() => null);
+    return trimMaybeString(inspection?.activeRoomId);
   }
 
   async function routeVerificationSummary(summary: MatrixVerificationSummaryLike): Promise<void> {
-    const roomId = resolveSummaryRoomId(summary);
+    const roomId = await resolveSummaryRoomId(summary);
     if (!roomId || !isActiveVerificationSummary(summary)) {
       return;
     }
